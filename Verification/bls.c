@@ -6,6 +6,9 @@
 
 int NUMSCALE = 1000000;
 int RANDOMRANGE = 2000;
+
+bool ErrorFlag = false;
+
 //Generator of G1 and G2
 element_t g,h,l,l1;
 
@@ -36,7 +39,7 @@ void generate_Cproof(element_t commit, element_t r_enc, element_t unit_enc, pair
 bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_enc);
 
 /* verify the weighted sum, i.e. z = a1w1 + a2w2; */
-bool verify_wsum(pairing_t pairing, element_t accC, element_t accR, element_t accA);
+bool verify_wsum(pairing_t pairing, long int wsum, mpz_t R, element_t PCOM);
 
 void readInputdata( long int *input, char * filename);
 void readWeightParmaters( long int * weight, char * filename);
@@ -44,7 +47,31 @@ void readWeightParmaters( long int * weight, char * filename);
 void UnitVOConstructionTime(pairing_t paring, long int pix, long int w,
 				element_t ga, element_t hw, element_t unit_enc);
 
+bool checkSignOfUnit( long int pix, long int weight );
+
+void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, mpz_t R2,
+	element_t pcom, mpz_t r );
+
+void writeTolog( char * buff){
+
+    FILE *pfile;
+    pfile = fopen("log", "a");
+
+    if ( pfile != NULL ){
+	fprintf(pfile, "%s", buff);  
+        fclose(pfile);  
+    }
+    else printf("log file cannot open\n");
+
+}
+/***** end of function definition *****/
+
+
 int main(int argc, char **argv) {
+
+
+  time_t t = time(NULL);  struct tm *tm = localtime(&t); char s[64]; strftime(s, sizeof(s), "%c\n", tm);
+  writeTolog(s);
 
   //read the input data into memory : 2000 test data example with 784 dimensions 
   int size = 2000, dim = 784;
@@ -61,20 +88,29 @@ int main(int argc, char **argv) {
   pbc_demo_pairing_init(pairing, argc, argv);
   init_group_generators(pairing);
 
+  //log buff
+  char * buff = ( char *) malloc( 1000 * sizeof(char));
   
   //First Layer Verification
   double unitvo_cons_time = 0;
   clock_t start, end;
   for ( int i = 0; i < 1 ; ++ i){
-      for (int j = 0 ; j < 2 ; ++ j ){ //j < n1
+      for (int j = 0 ; j < n1 ; ++ j ){ //j < n1
          
           mpz_t R; mpz_init(R);
+          mpz_t R2; mpz_init(R2);
 	  element_t PCOM; element_init_GT(PCOM, pairing);
-	  long int wsum = 0;
+	  element_t PCOM2; element_init_GT(PCOM2, pairing);
+	  long int wsumP = 0; //for the unit value that is Positive
+	  long int wsumN = 0; //for the unit value that is Negative
  
-	  for ( int k = 0 ; k < 10 ; ++ k){ // k < dim
+	  for ( int k = 0 ; k < dim ; ++ k){ // k < dim
+
+              
 	      long int w = (fc1_weight[k*dim+j]);
 	      long int pix = (input[i*dim+k]);
+	      bool flag =  checkSignOfUnit(pix,w);
+	      w = abs(w); pix = abs(pix);
 
 	      start = clock();
               /**************** Client VO Generation ******************/
@@ -88,135 +124,54 @@ int main(int argc, char **argv) {
 	      end = clock();
 	      unitvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
 
-	      wsum += (w*pix);
-	      printf("%ld\n",w*pix);
-	      /***************************************************************/
+	      if ( flag ) wsumP += (w*pix);
+	      else wsumN += (w*pix);
+	      //printf("%ld\n",w*pix);
 
-	      /********** Server Verify the Unit & Weighted SUM *******/
-	      //R = r1 + r2... + rn and C=C1 * C2 * ...Cn
-	      if ( k == 0 ) {
-		element_set(PCOM,pcom);
-		mpz_set(R,r);
-	      }
-	      else {
-		element_mul(PCOM,PCOM,pcom);
-		mpz_add(R,R,r);
-	      }
-		
+
+	      /****************** Server verifies the Unit  ***********/
+              verify_unit(pairing,ga,hw,unit_enc);
+	      /******************************************************/
+
+              //Server aggregates the ramdom value and commitment  
+	      aggregateProof(flag, k, PCOM, PCOM2, R, R2, pcom, r );
+	
+	      //release memory
               verify_unit(pairing,ga,hw,unit_enc);
               element_clear(ga); element_clear(hw); element_clear(unit_enc);
 	      element_clear(r_enc); mpz_clear(r); element_clear(pcom);
 	  }
 
-	  //l^R
-          mpz_t smpz; mpz_init(smpz); mpz_set_si (smpz, wsum);
-          element_t S_enc; element_init_GT(S_enc,pairing);
-          element_pow_mpz(S_enc,l1,smpz);
-	
-	  //l^S
-	  element_t R_enc; element_init_GT(R_enc, pairing);
-	  element_pow_mpz(R_enc,l,R);
-
-	  //(l^R) * (l^S)
-	  element_t tmp; element_init_GT(tmp, pairing);
-  	  element_mul(tmp, S_enc,R_enc); 
-	  
-          if (!element_cmp(tmp, PCOM)) {
-        	printf("unit verifies\n");
-     	  }
-  	  else {
-        	printf("*BUG* signature does not verify *BUG*\n");
-  	  }
-
-	  element_clear(S_enc); element_clear(R_enc); mpz_clear(R); element_clear(PCOM);
-	  element_clear(tmp); mpz_clear(smpz);
+	  /****** Server Veify Weighted SUM : R = r1 + r2... + rn and C=C1 * C2 * ...Cn*/
+	  if ( wsumP > 0 ) verify_wsum(pairing, wsumP, R, PCOM);
+          else {mpz_clear(R); element_clear(PCOM);}
+ 	  
+	  if ( wsumN > 0 ) verify_wsum(pairing, wsumN, R2, PCOM2);
+	  else { mpz_clear(R2); element_clear(PCOM2);}
 
       }
   } 
   
+  
+  writeTolog("The Unit Verification time:\n");
+  snprintf(buff, 1000, "%f\n", unitvo_cons_time);
+  writeTolog(buff);
+
+
+  writeTolog("\n");
   printf("%f\n",unitvo_cons_time);
-  return 0;
-  long int pix = 215, w = 12345;
-
-  //generate g^a
-  element_t ga;
-  generate_Aproof(ga,pairing,pix);
-  //printf("The length of proof len = %d\n",pairing_length_in_bytes_compressed_G1(pairing));
-
-  //create h^w
-  element_t hw;
-  create_Wproof(hw,pairing,w);
-  
-  //generate l^unit =  e(g^a,h^w)
-  element_t unit_enc;
-  generate_Uproof(unit_enc,ga,hw,pairing);
-  //printf("unit proof size = %d\n", getsizeofGT(pairing));
-
-  long int pix1 = 21, w1 = 1345;
-
-  element_t ga1;
-  generate_Aproof(ga1,pairing,pix1);
-  element_t hw1;
-  create_Wproof(hw1,pairing,w1);
-
-  element_t unit_enc1;
-  generate_Uproof(unit_enc1,ga1,hw1,pairing);
-
-  //create l^r
-  mpz_t r;
-  element_t r_enc;
-  create_Rproof(r, r_enc,pairing);
-  //element_printf("proof l^r = %B\n", r_enc);
-
-  mpz_t r1;
-  element_t r_enc1;
-  create_Rproof(r1, r_enc1,pairing);
-  //element_printf("proof l^r = %B\n", r_enc1);
-   
-  //create c=l^r * l^unit
-  element_t c, c1;
-  generate_Cproof(c,r_enc,unit_enc,pairing);  
-  generate_Cproof(c1,r_enc1, unit_enc1 ,pairing);  
-
-  //verification part 1
-  //verify_unit(pairing,ga,hw,unit_enc);
-
-  //verification part 2
-  mpz_t R; mpz_init(R);
-  mpz_add(R,r,r1);
-  element_pow_mpz(r_enc,l,R);
-
-  element_t c2;
-  generate_Cproof(c2,c,c1,pairing);
-
-  long int s = pix*w + pix1*w1;
-  mpz_t smpz;
-  mpz_init(smpz);
-  mpz_set_si (smpz, s);
-
-  element_t s_enc; element_init_GT(s_enc,pairing);
-  element_pow_mpz(s_enc,l1,smpz);
-
-  element_t tmp; element_init_GT(tmp, pairing);
-  element_mul(tmp, s_enc,r_enc);
-  
-  if (!element_cmp(tmp, c2)) {
-        printf("unit verifies\n");
-     } 
-  else {
-        printf("*BUG* signature does not verify *BUG*\n");
-  } 
- 
-  element_clear(ga); element_clear(hw); element_clear(g); element_clear(h); element_clear(l);
-  element_clear(unit_enc); element_clear(r_enc); mpz_clear(r); 
-
-  pairing_clear(pairing);
-
-  free(input);
-  free(fc1_weight);
+  printf("%d\n",ErrorFlag);
+  free(buff);
   return 0;
 }
 
+
+
+
+
+
+
+/****** Start of function details *****/
 void init_group_generators(pairing_t pairing){
 
    element_init_G2(g, pairing);
@@ -329,9 +284,10 @@ bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_e
      //e(g^a,h^w) ?= e(g,h)^(aw)
      bool flag = true;
      if (!element_cmp(tmp1, unit_enc)) {
-        printf("unit verifies\n");
+        //printf("unit verifies\n");
      } else {
-        printf("*BUG* signature does not verify *BUG*\n");
+        //printf("*BUG* signature does not verify *BUG*\n");
+        ErrorFlag = true;
         flag =  false;
      }
 
@@ -365,10 +321,12 @@ void readInputdata( long int  *input, char * filename){
 		i = 0;
 	   }
        }
+
+       fclose(file);
   }
   else printf("file open error\n");
  
-  printf("n=%d\n", count);
+  //printf("n=%d\n", count);
   free(pixstr);
 }
 
@@ -399,10 +357,11 @@ void readWeightParmaters( long int * weight, char * filename){
                 i = 0;
            }
        }
+       fclose(file);
   }
   else printf("file open error\n");
 
-  printf("n=%d\n", count);
+  //printf("n=%d\n", count);
   free(pixstr);
 }
 
@@ -420,3 +379,57 @@ void UnitVOConstructionTime(pairing_t pairing, long int pix, long int w,
   generate_Uproof(unit_enc,ga,hw,pairing);
 
 }
+
+bool checkSignOfUnit( long int pix, long int weight ){
+
+  if ( pix * weight <= 0 ) return false;
+  return true;
+}
+
+bool verify_wsum(pairing_t pairing, long int wsum, mpz_t R, element_t PCOM){
+
+  //l^S
+  mpz_t smpz; mpz_init(smpz); mpz_set_si (smpz, wsum);
+  element_t S_enc; element_init_GT(S_enc,pairing);
+  element_pow_mpz(S_enc,l1,smpz);
+	
+  //l^R
+  element_t R_enc; element_init_GT(R_enc, pairing);
+  element_pow_mpz(R_enc,l,R);
+
+  //(l^R) * (l^S)
+  element_t tmp; element_init_GT(tmp, pairing);
+  element_mul(tmp, S_enc,R_enc); 
+	  
+  if (!element_cmp(tmp, PCOM)) {
+        //printf("weighted sum verifies\n");
+	return true;
+  }
+  else {
+        //printf("*BUG* signature does not verify *BUG*\n");
+	ErrorFlag = true;
+	return false;
+  }
+
+  element_clear(S_enc); element_clear(R_enc); mpz_clear(R); element_clear(PCOM);
+  element_clear(tmp); mpz_clear(smpz);
+
+}
+
+void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, mpz_t R2,
+        element_t pcom, mpz_t r ){
+
+    if ( k == 0 && flag ) {
+        element_set(PCOM,pcom);  mpz_set(R,r);
+    }
+    else if (k > 0 && flag) {
+        element_mul(PCOM,PCOM,pcom);  mpz_add(R,R,r);
+    }
+    else if ( k == 0 && (!flag) ){
+        element_set(PCOM2,pcom);  mpz_set(R2,r);
+    }
+    else{
+        element_mul(PCOM2,PCOM2,pcom); mpz_add(R2,R2,r);
+    }
+}
+
