@@ -10,7 +10,7 @@ switch the original "bls.c" with my "bls.c" file.
  
 About the code:
 1. All the code you need is in bls.c, the only file you need to look at!
-2. Other *.c fils do not server the verification of this project, 
+2. Other *.c files do not server the verification of this project, 
 their role is to make bls.c compile successfully.
 3  Use 'make' to compile, debug the code if any errors appear
 4. Good luck !
