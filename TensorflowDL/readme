@@ -1,2 +1,15 @@
 
-This is the deep learning part
+This is the deep learning part.
+
+I simplified DNN model example provided Tensorlow team.
+The simple model only has two full connection layer, no drop out, no CNNs.
+
+
+There are two optimizer of the simple model.
+
+First optimizer is the original one implemented by Tensorflow team
+You can get gradients and updated parameters by this optimizer, it also supports regularization
+
+Second optimizer is followed by the chain rule to calculate the each intermediate results to get
+the gradient. It does not support regularization, but it can prodide the error signal term at each layer.
+
