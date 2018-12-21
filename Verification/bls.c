@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <time.h>
 
+
 int NUMSCALE = 1000000;
 int RANDOMRANGE = 2000;
 
@@ -52,18 +53,9 @@ bool checkSignOfUnit( long int pix, long int weight );
 void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, mpz_t R2,
 	element_t pcom, mpz_t r );
 
-void writeTolog( char * buff){
+void writeTolog( char * buff);
 
-    FILE *pfile;
-    pfile = fopen("log", "a");
-
-    if ( pfile != NULL ){
-	fprintf(pfile, "%s", buff);  
-        fclose(pfile);  
-    }
-    else printf("log file cannot open\n");
-
-}
+float exponential(int n, float x); 
 /***** end of function definition *****/
 
 
@@ -71,7 +63,7 @@ int main(int argc, char **argv) {
 
 
   time_t t = time(NULL);  struct tm *tm = localtime(&t); char s[64]; strftime(s, sizeof(s), "%c\n", tm);
-  writeTolog(s);
+  writeTolog(s); writeTolog("wsum_vtime\t werr_vtime\t unit_vtime\t unit_ctime\t wsum_ctime\t comm_ctime\n");
 
   //read the input data into memory : 2000 test data example with 784 dimensions 
   int size = 2000, dim = 784;
@@ -93,9 +85,17 @@ int main(int argc, char **argv) {
   
   //First Layer Verification
   double unitvo_cons_time = 0;
+  double commvo_cons_time = 0;
+  double weisum_cons_time = 0;
+  double wsum_verify_time = 0;
+  double unit_verify_time = 0;
+  double werr_verify_time = 0;
+
+  //chage inputnum and neruon_num to simulate different layer's verification
+  int inputnum = 784, neuron_num = 512;
   clock_t start, end;
   for ( int i = 0; i < 1 ; ++ i){
-      for (int j = 0 ; j < n1 ; ++ j ){ //j < n1
+      for (int j = 0 ; j < neuron_num ; ++ j ){ //j < neuron_num
          
           mpz_t R; mpz_init(R);
           mpz_t R2; mpz_init(R2);
@@ -103,63 +103,136 @@ int main(int argc, char **argv) {
 	  element_t PCOM2; element_init_GT(PCOM2, pairing);
 	  long int wsumP = 0; //for the unit value that is Positive
 	  long int wsumN = 0; //for the unit value that is Negative
+	  long int wsum = 0;
  
-	  for ( int k = 0 ; k < dim ; ++ k){ // k < dim
+	  for ( int k = 0 ; k < inputnum ; ++ k){ // k < inputnum
 
               
 	      long int w = (fc1_weight[k*dim+j]);
 	      long int pix = (input[i*dim+k]);
+	      wsum += (w*pix);
+
 	      bool flag =  checkSignOfUnit(pix,w);
 	      w = abs(w); pix = abs(pix);
 
-	      start = clock();
               /**************** Client VO Generation ******************/
 	      element_t ga, hw, unit_enc, pcom;
 	      mpz_t r; element_t r_enc;
 
+	      start = clock();
+	      //h^r
               create_Rproof(r, r_enc,pairing);
-	      UnitVOConstructionTime(pairing,pix,w,ga,hw,unit_enc); 
-    	      generate_Cproof(pcom,r_enc,unit_enc,pairing);
-
+	      //g^a
 	      end = clock();
 	      unitvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+
+	      start = clock();
+  	      generate_Aproof(ga,pairing,pix);
+  	      //create h^w
+  	      create_Wproof(hw,pairing,w);
+	      end = clock();
+	      commvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+	      start = clock();
+  	      //generate l^unit =  e(g^a,h^w)
+  	      generate_Uproof(unit_enc,ga,hw,pairing);
+	      end = clock();
+	      unitvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+
+	      start = clock();
+    	      generate_Cproof(pcom,r_enc,unit_enc,pairing);
+	      end = clock();
+	      weisum_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
 
 	      if ( flag ) wsumP += (w*pix);
 	      else wsumN += (w*pix);
 	      //printf("%ld\n",w*pix);
 
 
+	      start = clock();
 	      /****************** Server verifies the Unit  ***********/
               verify_unit(pairing,ga,hw,unit_enc);
 	      /******************************************************/
+	      end = clock();
+              unit_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
 
+
+	      start = clock();
               //Server aggregates the ramdom value and commitment  
 	      aggregateProof(flag, k, PCOM, PCOM2, R, R2, pcom, r );
+	      end = clock();
+              wsum_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC); 
+
 	
 	      //release memory
-              verify_unit(pairing,ga,hw,unit_enc);
               element_clear(ga); element_clear(hw); element_clear(unit_enc);
 	      element_clear(r_enc); mpz_clear(r); element_clear(pcom);
 	  }
 
 	  /****** Server Veify Weighted SUM : R = r1 + r2... + rn and C=C1 * C2 * ...Cn*/
+	  float y = -(((double) (wsumP-wsumN)) / ((double) NUMSCALE) );
+ 	  double exp_value = exponential(20,y); double return_value = 1 / (1+exp_value);
+
+  	  float z1 = -(((double) (wsumP-wsumN)) / ((double) NUMSCALE) );
+          double exp_value4 = exponential(20,z1);
+          float  return_value4 = 1 / (1 + exp_value4);
+          double  derivative2 = return_value4 * (1-return_value4);
+
+
+	  start = clock();
 	  if ( wsumP > 0 ) verify_wsum(pairing, wsumP, R, PCOM);
           else {mpz_clear(R); element_clear(PCOM);}
  	  
 	  if ( wsumN > 0 ) verify_wsum(pairing, wsumN, R2, PCOM2);
 	  else { mpz_clear(R2); element_clear(PCOM2);}
 
+	  //Verify the two parts of sum 
+	  if ( wsumP-wsumN != wsum ) ErrorFlag = true; 
+	  end = clock();
+
+	  wsum_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+	  werr_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+	  start = clock();
+	  //Verify the sigmoid function (Simulate local computation)
+	  float x = -(((double) wsum) / ((double) NUMSCALE) );
+          double exp_value2 = exponential(20,x);
+          float  return_value2 = 1 / (1 + exp_value2);
+	  if ( abs(return_value2-return_value) > 0.00001) ErrorFlag = true;
+	  end = clock();
+
+          wsum_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+	  start = clock();
+	  float z = -(((double) wsum) / ((double) NUMSCALE) );
+          double exp_value3 = exponential(20,z);
+          float  return_value3 = 1 / (1 + exp_value3);
+	  double  derivative = return_value3 * (1-return_value3);
+	  if ( abs(derivative-derivative2) > 0.00001 ) ErrorFlag = true;
+	  end = clock();
+	  werr_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+ 	  snprintf(buff, 1000, "%f\t ", wsum_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", werr_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", unit_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", unitvo_cons_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", weisum_cons_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\n",  commvo_cons_time); writeTolog(buff);
+          
+	  if (ErrorFlag){
+		printf("Error happend please Debug!\n");
+	  }          
+
+          if ( j % 100 == 0 ){
+		printf("#of Unit Finished:%d\n", (j+1)*dim);
+	  }
+
       }
   } 
   
   
-  writeTolog("The Unit Verification time:\n");
-  snprintf(buff, 1000, "%f\n", unitvo_cons_time);
-  writeTolog(buff);
-
-
-  writeTolog("\n");
-  printf("%f\n",unitvo_cons_time);
   printf("%d\n",ErrorFlag);
   free(buff);
   return 0;
@@ -433,3 +506,24 @@ void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, 
     }
 }
 
+void writeTolog( char * buff){
+
+    FILE *pfile;
+    pfile = fopen("log", "a");
+
+    if ( pfile != NULL ){
+        fprintf(pfile, "%s", buff);
+        fclose(pfile);
+    }
+    else printf("log file cannot open\n");
+
+}
+
+float exponential(int n, float x) { 
+    float sum = 1.0f; // initialize sum of series 
+  
+    for (int i = n - 1; i > 0; --i ) 
+        sum = 1 + x * sum / i; 
+  
+    return sum; 
+} 
