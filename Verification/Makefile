@@ -109,7 +109,7 @@ AUTOMAKE = ${SHELL} /home/bzhang41/cryptolibrary/pbc-0.5.14/missing --run automa
 AWK = gawk
 CC = gcc
 CCDEPMODE = depmode=gcc3
-CFLAGS =  -Wall -W -Wfloat-equal -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wredundant-decls -Wendif-labels -Wshadow -pipe -ffast-math -U__STRICT_ANSI__ -std=gnu99 -fomit-frame-pointer -O3
+CFLAGS =  -Wall -W -lm -Wfloat-equal -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wredundant-decls -Wendif-labels -Wshadow -pipe -ffast-math -U__STRICT_ANSI__ -std=gnu99 -fomit-frame-pointer -O3
 CPP = gcc -E
 CPPFLAGS = 
 CYGPATH_W = echo

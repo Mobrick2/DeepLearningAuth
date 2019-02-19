@@ -1,0 +1,575 @@
+#include <pbc.h>
+#include <pbc_test.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <time.h>
+//The prime number 730750818665451621361119245571504901405976559617
+
+int NUMSCALE = 1000000;
+int RANDOMRANGE = 2000;
+
+bool ErrorFlag = false;
+
+//Generator of G1 and G2
+element_t g,h,l,l1;
+
+/* Initialize the group generators */
+void init_group_generators(pairing_t pairing);
+
+/*Compress the proof to save communication cost */
+unsigned char * compressG1( pairing_t pairing, element_t g1);
+unsigned char * compressG2( pairing_t pairing, element_t g2);
+int getsizeofGT( pairing_t pairing);
+
+/*Proof of uni generated from client or server, i.e. g^a. */
+void generate_Aproof(element_t a_enc, pairing_t pairing, long int a);    
+
+//Generate g^a, even if a is negative value
+void generate_AproofWithNegativeValue(element_t a_enc, pairing_t pairing, long int a);
+
+/* Proof of unit create from the server or client side, i.e. g^w */
+void create_Wproof(element_t w_enc, pairing_t pairing, long int w);
+
+// g^w deal with negative value
+void create_WproofWithNegativeValue(element_t w_enc, pairing_t pairing, long int w);
+
+/* Proof of unit create from the client sidei, i.e. e(g^a,h^w) */
+void generate_Uproof(element_t unit_enc, element_t ga, element_t hw, pairing_t pairing);
+
+/*Proof of weighted sum from the client, i.e. l^r which is used to commitment */
+void create_Rproof(mpz_t r, element_t gt, pairing_t pairing);
+
+/* Proof of Pederson Commitment */
+void generate_Cproof(element_t commit, element_t r_enc, element_t unit_enc, pairing_t pairing);
+
+//the weighted sum proof e(g,h)^z or e(g,h)^(z+q)
+void create_ZproofWithNegativeValue(element_t z_enc, pairing_t pairing, long int z);
+
+/* verify the unit value, i.e. e(g^a,h^w) ?= e(g,h)^(unit) */
+bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_enc);
+
+/* verify the weighted sum, i.e. z = a1w1 + a2w2; */
+bool verify_wsum(pairing_t pairing, long int wsum, mpz_t R, element_t PCOM);
+
+void readInputdata( long int *input, char * filename);
+void readWeightParmaters( long int * weight, char * filename);
+
+void UnitVOConstructionTime(pairing_t paring, long int pix, long int w,
+				element_t ga, element_t hw, element_t unit_enc);
+
+bool checkSignOfUnit( long int pix, long int weight );
+
+void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, mpz_t R2,
+	element_t pcom, mpz_t r );
+
+void aggregatePairingResult(int k, element_t PCOM, element_t pcom);
+
+void writeTolog( char * buff);
+
+float exponential(int n, float x); 
+/***** end of function definition *****/
+
+
+int main(int argc, char **argv) {
+
+
+  time_t t = time(NULL);  struct tm *tm = localtime(&t); char s[64]; strftime(s, sizeof(s), "%c\n", tm);
+  writeTolog(s); writeTolog("wsum_vtime\t werr_vtime\t unit_vtime\t unit_ctime\t wsum_ctime\t comm_ctime\t vosize\n");
+
+  //read the input data into memory : 2000 test data example with 784 dimensions 
+  int size = 2000, dim = 784;
+  long int *input = (long int *)malloc(size * dim * sizeof(long int)); 
+  readInputdata(input,"/home/bzhang41/DLVerification/dataset/testdata.txt");
+  
+  //read the weight parameter 784 * 512
+  int n1 = 512;
+  long int *fc1_weight = (long int * ) malloc(dim * n1 * sizeof (long int));
+  readWeightParmaters(fc1_weight, "/home/bzhang41/DLVerification/dataset/fc1_weight.txt");
+  
+  /***Initial the pairing function***/
+  pairing_t pairing;
+  pbc_demo_pairing_init(pairing, argc, argv);
+  init_group_generators(pairing);
+
+  //log buff
+  char * buff = ( char *) malloc( 1000 * sizeof(char));
+  
+  //First Layer Verification
+  double unitvo_cons_time = 0; //construct g^w and pairing e(g^x,h^w) (part of verification time)
+  double commvo_cons_time = 0; //input g^x and g^y construction time (part of vo construction time)
+  double weisum_cons_time = 0; //aggregate pairing result time (part of verification time)
+  double wsum_verify_time = 0; //check if \Pi e(g^x, h^w) ?= e(g,h)^(wsum) (part of the verification time)
+  double unit_verify_time = 0; //multiplication time: x*w 
+  double werr_verify_time = 0; //calculate the activation function, part of the verification
+  double weight_sumlength = 0;
+
+  //chage inputnum and neruon_num to simulate different layer's verification
+  int inputnum = 10, neuron_num = 1;
+  clock_t start, end;
+  for ( int i = 0; i < 1 ; ++ i){
+      for (int j = 0 ; j < neuron_num ; ++ j ){ //j < neuron_num
+         
+ 	  //aggregated pairing viarable
+	  element_t PCOM, ghz; element_init_GT(PCOM, pairing);
+	  long int wsum = 0 ;
+ 
+	  for ( int k = 0 ; k < inputnum ; ++ k){ // k < inputnum
+
+	      long int w = (fc1_weight[k*dim+j]);
+	      long int pix = (input[i*dim+k]);
+
+	      start = clock();
+	      wsum += (w*pix);
+	      end = clock();
+	      unit_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+
+              /**************** Client VO Generation ******************/
+	      element_t ga, hw, pcom;
+	      //g^a
+	      start = clock();
+  	      generate_AproofWithNegativeValue(ga,pairing,pix);
+	      unsigned char * sizetest = compressG1(pairing,ga); free(sizetest); 
+	      end = clock();
+	      commvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+	      //part of the verification step of the server
+	      start = clock();
+  	         //create h^w
+	      create_WproofWithNegativeValue(hw, pairing,w);
+  	         //generate l^unit =  e(g^a,h^w)
+  	      generate_Uproof(pcom,ga,hw,pairing);
+	      end = clock();
+	      unitvo_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+	      
+	      //element_printf("size of gt = %B\n", unit_enc); 
+
+
+	      start = clock();
+	      aggregatePairingResult(k,PCOM,pcom);
+	      end = clock();
+	      weisum_cons_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+	      //printf("size of wsum = %ld\n",w*pix);
+
+	      //release memory
+              element_clear(ga); element_clear(hw); element_clear(pcom);
+	  }
+
+	  long int tmpwsum  =  wsum;
+	  int nDigits = 0;
+	  while ( tmpwsum ){
+		tmpwsum = tmpwsum / 10 ;
+		nDigits++;
+	  }
+	  weight_sumlength += ((double) nDigits);
+
+	  //verify if \Pi e(g^a,h^w) ?= e(g,h)^wsum, part of the verification 
+	  start = clock();
+  	  create_ZproofWithNegativeValue(ghz, pairing,wsum);
+  	  if ( element_cmp(ghz,PCOM) ) ErrorFlag = true;
+	  end = clock();
+          wsum_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+	  //calculate the activation function, part of the verification
+	  start = clock();
+	  float realz = -(((double) wsum) / ((double) NUMSCALE) );
+          double exp_value = exponential(20,realz);
+          float  return_value = 1 / (1 + exp_value);
+	  if ( abs(return_value-return_value) > 0.00001 ) ErrorFlag = true;
+	  end = clock();
+	  werr_verify_time += (((double) (end - start)) / CLOCKS_PER_SEC);
+
+ 	  snprintf(buff, 1000, "%f\t ", wsum_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", werr_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", unit_verify_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", unitvo_cons_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", weisum_cons_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\t ", commvo_cons_time); writeTolog(buff);
+ 	  snprintf(buff, 1000, "%f\n ", weight_sumlength); writeTolog(buff);
+          
+	  if (ErrorFlag){
+		printf("Error happend please Debug!\n");
+	  }          
+
+          if ( j % 100 == 0 ){
+		printf("#of Unit Finished:%d\n", (j+1)*dim);
+	  }
+      
+	element_clear(PCOM);
+      }
+  } 
+  
+  
+  printf("%d\n",ErrorFlag);
+  free(buff);
+  return 0;
+}
+
+
+
+
+
+
+
+/****** Start of function details *****/
+void init_group_generators(pairing_t pairing){
+
+   element_init_G2(g, pairing);
+   element_init_GT(l, pairing);
+   element_init_GT(l1, pairing);
+   element_init_G1(h, pairing);
+
+   element_random(g);
+   //element_printf("system parameter g = %B\n", g);
+
+   element_random(l);
+   //element_printf("system parameter l = %B\n", l);
+
+   element_random(h);
+   //element_printf("system parameter h = %B\n", h);
+  
+   element_pairing(l1,g,h);
+}
+
+unsigned char * compressG1( pairing_t pairing, element_t g1){
+
+    int n = pairing_length_in_bytes_compressed_G1(pairing);
+    printf("The length of proof len = %d\n",n);
+    unsigned char *data = pbc_malloc(n);
+
+    element_to_bytes_compressed(data, g1);
+    return data;
+}
+
+unsigned char * compressG2( pairing_t pairing, element_t g2){
+
+    int n = pairing_length_in_bytes_compressed_G2(pairing);
+    printf("The length of proof len = %d\n",n);
+    unsigned char *data = pbc_malloc(n);
+
+    element_to_bytes_compressed(data, g2);
+    return data;
+}
+
+int getsizeofGT( pairing_t pairing){
+
+    int n = pairing_length_in_bytes_GT(pairing);
+    return n;
+}
+
+void generate_Aproof(element_t a_enc, pairing_t pairing, long int a){
+
+    mpz_t ampz;
+    mpz_init(ampz);
+    element_init_G2(a_enc,pairing);
+
+    mpz_set_si (ampz, a);
+    element_pow_mpz(a_enc,g,ampz);
+    //element_printf("proof g^a = %B\n", a_enc);
+    mpz_clear(ampz);
+}
+
+void generate_AproofWithNegativeValue(element_t a_enc, pairing_t pairing, long int a){
+
+    mpz_t ampz;
+    mpz_init(ampz);
+    element_init_G2(a_enc,pairing);
+
+    mpz_set_si (ampz, a);
+    if ( a < 0 ){
+  	mpz_t pmpz; mpz_init(pmpz);
+        //order of group: r=730750818665451621361119245571504901405976559617
+        //mpz_set_str(pmpz,"12016012264891146079388821366740534204802954401251311822919615131047207289359704531102844802183906537786776",10);
+	mpz_set_str(pmpz,"730750818665451621361119245571504901405976559617",10);
+	mpz_add(ampz,ampz,pmpz);	
+    }
+
+    element_pow_mpz(a_enc,g,ampz);
+    //element_printf("proof g^a = %B\n", a_enc);
+    mpz_clear(ampz);
+}
+
+void create_Wproof(element_t w_enc, pairing_t pairing, long int w){
+
+    mpz_t wmpz;
+
+    mpz_init(wmpz);
+    mpz_set_si (wmpz, w);
+    element_init_G1(w_enc,pairing);
+    element_pow_mpz(w_enc,h,wmpz);
+    //element_printf("proof h^w = %B\n", w_enc);
+    mpz_clear(wmpz);
+
+}
+
+void create_WproofWithNegativeValue(element_t w_enc, pairing_t pairing, long int w){
+
+    mpz_t wmpz;
+
+    mpz_init(wmpz);
+    mpz_set_si (wmpz, w);
+    element_init_G1(w_enc,pairing);
+
+    if ( w < 0 ){
+        mpz_t pmpz; mpz_init(pmpz);
+	//order of group: h = 12016012264891146079388821366740534204802954401251311822919615131047207289359704531102844802183906537786776
+        //mpz_set_str(pmpz,"12016012264891146079388821366740534204802954401251311822919615131047207289359704531102844802183906537786776",10);
+	mpz_set_str(pmpz,"730750818665451621361119245571504901405976559617",10);
+        mpz_add(wmpz,wmpz,pmpz);
+    }
+
+    element_pow_mpz(w_enc,h,wmpz);
+    //element_printf("proof h^w = %B\n", w_enc);
+    mpz_clear(wmpz);
+
+}
+
+void create_ZproofWithNegativeValue(element_t z_enc, pairing_t pairing, long int z){
+
+    mpz_t zmpz;
+
+    mpz_init(zmpz);
+    mpz_set_si (zmpz, z);
+    element_init_GT(z_enc,pairing);
+
+    if ( z < 0 ){
+        mpz_t pmpz; mpz_init(pmpz);
+        //order of group:q = 87807107996633125224377819847540498158068831994142082110286533992664756308802229570786251794226622214231558587695823174592	       //77713367317481324925129998224791 
+        //mpz_set_str(pmpz,"8780710799663312522437781984754049815806883199414208211028653399266475630880222957078625179422662221423155858769582317459277713367317481324925129998224792",10);
+        mpz_set_str(pmpz,"533996758980227757740954184565982584196970567680134457127940818038232046519285332792455555186689",10);
+        mpz_add(zmpz,zmpz,pmpz);
+    }
+
+    element_pow_mpz(z_enc,l1,zmpz);
+    //element_printf("proof h^w = %B\n", w_enc);
+    mpz_clear(zmpz);
+
+}
+void generate_Uproof(element_t unit_enc, element_t ga, element_t hw, pairing_t pairing){
+
+    element_init_GT(unit_enc, pairing);
+    element_pairing(unit_enc,ga,hw);
+
+}
+
+void create_Rproof(mpz_t r, element_t gt, pairing_t pairing){
+
+    gmp_randstate_t state;
+    gmp_randinit_default(state);
+    mpz_init(r);
+    mpz_urandomb (r,state, RANDOMRANGE);
+ 
+    FILE * file;
+    file = fopen("sizetest", "a");
+    int size = mpz_out_raw(file, r);
+    
+    printf ("r = %d\n", size);
+
+    //clock_t start, end;
+    element_init_GT(gt, pairing);
+    //start = clock();
+    element_pow_mpz(gt,l,r);
+    //end = clock();
+    //double test = ((double) (end - start)) / CLOCKS_PER_SEC;
+    //printf("time=%f",test); 
+}
+
+void generate_Cproof(element_t commit, element_t r_enc, element_t unit_enc, pairing_t pairing){
+
+
+    element_init_GT(commit, pairing);
+    element_mul(commit,r_enc ,unit_enc);
+
+}
+
+bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_enc){
+
+     element_t tmp1;
+     element_init_GT(tmp1, pairing);
+
+     //e(g^a,h^w)
+     element_pairing(tmp1, ga, hw);
+
+     //e(g^a,h^w) ?= e(g,h)^(aw)
+     bool flag = true;
+     if (!element_cmp(tmp1, unit_enc)) {
+        //printf("unit verifies\n");
+     } else {
+        //printf("*BUG* signature does not verify *BUG*\n");
+        ErrorFlag = true;
+        flag =  false;
+     }
+
+     element_clear(tmp1);
+     return flag;
+}
+
+void readInputdata( long int  *input, char * filename){
+
+  char * pixstr = malloc( 20 * sizeof(char));
+  int i = 0;
+  char tmp;
+
+  FILE *file;
+  file = fopen(filename, "r");
+  int count  = 0 ;
+ 
+  if ( file != NULL ){
+
+       while ( (tmp = (char)fgetc(file)) != EOF ){ 
+
+	   if (tmp == '[' || tmp == '\t' || tmp == '\n') continue;
+
+	   pixstr[i++] = tmp;
+           if ( tmp == ' ' || tmp == ']'){
+		pixstr[i-1] = '\0';
+   		if ( pixstr[0] != '\0' ) {
+			input[count++] = (long int) (NUMSCALE * atof(pixstr));
+			//printf("%d\n", input[count-1]);
+		}
+		i = 0;
+	   }
+       }
+
+       fclose(file);
+  }
+  else printf("file open error\n");
+ 
+  //printf("n=%d\n", count);
+  free(pixstr);
+}
+
+void readWeightParmaters( long int * weight, char * filename){
+
+  char * pixstr = malloc( 20 * sizeof(char));
+  int i = 0;
+  char tmp;
+
+  FILE *file;
+  file = fopen(filename, "r");
+  int count  = 0 ;
+
+  if ( file != NULL ){
+
+       while ( (tmp = (char)fgetc(file)) != EOF ){
+
+           if (tmp == '[' || tmp == '\t' || tmp == '\n') continue;
+
+           pixstr[i++] = tmp;
+           if ( tmp == ' ' || tmp == ']'){
+                pixstr[i-1] = '\0';
+                if ( pixstr[0] != '\0' ) {
+			if ( pixstr[i-2] == '.' ) pixstr[i-2] = '\0';
+                        weight[count++] = (long int) (atof(pixstr));
+                        //printf("%ld\n", weight[count-1]);
+                }
+                i = 0;
+           }
+       }
+       fclose(file);
+  }
+  else printf("file open error\n");
+
+  //printf("n=%d\n", count);
+  free(pixstr);
+}
+
+
+void UnitVOConstructionTime(pairing_t pairing, long int pix, long int w, 
+		element_t ga, element_t hw, element_t unit_enc){
+
+  //generate g^a
+  generate_Aproof(ga,pairing,pix);
+
+  //create h^w
+  create_Wproof(hw,pairing,w);
+
+  //generate l^unit =  e(g^a,h^w)
+  generate_Uproof(unit_enc,ga,hw,pairing);
+
+}
+
+bool checkSignOfUnit( long int pix, long int weight ){
+
+  if ( pix * weight <= 0 ) return false;
+  return true;
+}
+
+bool verify_wsum(pairing_t pairing, long int wsum, mpz_t R, element_t PCOM){
+
+  //l^S
+  mpz_t smpz; mpz_init(smpz); mpz_set_si (smpz, wsum);
+  element_t S_enc; element_init_GT(S_enc,pairing);
+  element_pow_mpz(S_enc,l1,smpz);
+	
+  //l^R
+  element_t R_enc; element_init_GT(R_enc, pairing);
+  element_pow_mpz(R_enc,l,R);
+
+  //(l^R) * (l^S)
+  element_t tmp; element_init_GT(tmp, pairing);
+  element_mul(tmp, S_enc,R_enc); 
+	  
+  if (!element_cmp(tmp, PCOM)) {
+        //printf("weighted sum verifies\n");
+	return true;
+  }
+  else {
+        //printf("*BUG* signature does not verify *BUG*\n");
+	ErrorFlag = true;
+	return false;
+  }
+
+  element_clear(S_enc); element_clear(R_enc); mpz_clear(R); element_clear(PCOM);
+  element_clear(tmp); mpz_clear(smpz);
+
+}
+
+void aggregatePairingResult(int k, element_t PCOM, element_t pcom){
+
+   if ( k == 0 ){
+	element_set(PCOM,pcom);
+   }
+   else{
+	element_mul(PCOM,PCOM,pcom);
+   } 
+}
+
+void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, mpz_t R2,
+        element_t pcom, mpz_t r ){
+
+    if ( k == 0 && flag ) {
+        element_set(PCOM,pcom);  mpz_set(R,r);
+    }
+    else if (k > 0 && flag) {
+        element_mul(PCOM,PCOM,pcom);  mpz_add(R,R,r);
+    }
+    else if ( k == 0 && (!flag) ){
+        element_set(PCOM2,pcom);  mpz_set(R2,r);
+    }
+    else{
+        element_mul(PCOM2,PCOM2,pcom); mpz_add(R2,R2,r);
+    }
+}
+
+void writeTolog( char * buff){
+
+    FILE *pfile;
+    pfile = fopen("log", "a");
+
+    if ( pfile != NULL ){
+        fprintf(pfile, "%s", buff);
+        fclose(pfile);
+    }
+    else printf("log file cannot open\n");
+
+}
+
+float exponential(int n, float x) { 
+    float sum = 1.0f; // initialize sum of series 
+  
+    for (int i = n - 1; i > 0; --i ) 
+        sum = 1 + x * sum / i; 
+  
+    return sum; 
+} 

@@ -89,7 +89,8 @@ int main(int argc, char **argv) {
   //read the input data into memory : 2000 test data example with 784 dimensions 
   int size = 2000, dim = 784; //2000, 784 = 1568000
   long int *input = (long int *)malloc(dim * size * sizeof(long int)); 
-  readInputdata(input,"/home/bzhang41/DLVerification/dataset/testdata.txt");
+  readInputdata(input,"/home/bzhang41/deeplearninglib/timit-preprocessor/data/processed/");
+
 
   //read the weight parameter 784 * 512 == 401408 //
   //network 784*20 + 230*230 + 20*230 + 230*20 + 20*10 = 77980
@@ -99,7 +100,7 @@ int main(int argc, char **argv) {
 
 
   start = clock(); 
-  int weightNumber = 784 * 500;
+  int weightNumber = 784 * 100;
   element_t *encWeight = ( element_t *)malloc ( weightNumber  * sizeof(element_t));
   for ( int i = 0 ; i < weightNumber ; ++ i ){
         create_WproofWithNegativeValue(encWeight[i],pairing,fc1_weight[i]);
@@ -135,7 +136,7 @@ int main(int argc, char **argv) {
   int countWeight = 0 ;
   int neuronNumberAtH1 = 50, neuronNumberAtH2 = 200, neuronNumberAtH3 = 200, neuronNumberAtH4 = 50, outputNum = 10;
 
-  int batchsize = 200;
+  int batchsize = 100;
   for ( int i = 0; i < batchsize ; ++ i){
 
       countWeight = 0;
@@ -279,6 +280,7 @@ int main(int argc, char **argv) {
       
       end = clock();
       step1_3 += (((double) (end - start)) / CLOCKS_PER_SEC);
+
       
       start = clock();
       for ( int j = 0 ; j < outputNum; ++ j){
@@ -308,6 +310,7 @@ int main(int argc, char **argv) {
       
       end = clock();
       step2_1 += (((double) (end - start)) / CLOCKS_PER_SEC);
+      
       
       start = clock();
       for ( int j = 0 ; j < outputNum * neuronNumberAtH4 ; ++ j){
@@ -420,8 +423,7 @@ int main(int argc, char **argv) {
       end = clock();
       step2_4 += (((double) (end - start)) / CLOCKS_PER_SEC);
       
-     
-      countWeight = 784 * 500 - 1;      
+      
       start = clock();
       for ( int j = 0 ; j < neuronNumberAtH1 * dim ; ++ j){
           
@@ -450,10 +452,9 @@ int main(int argc, char **argv) {
       end = clock();
       step2_6 += (((double) (end - start)) / CLOCKS_PER_SEC);
 
-      if ( (i + 1) % 10 == 0 )  
-      	printf("Step 2 finished\n"); 
+      printf("Step 2 finished\n"); 
 
-      if ( (i+1) % 50 == 0 || i+1 == 10 ){
+      if ( (i+1) % 100 == 0 ){
         printf("10 batch size finished\n"); 
         snprintf(buff, 1000, "%f\t", step1_1); writeTolog(buff);
         snprintf(buff, 1000, "%f\t", step1_2); writeTolog(buff);
@@ -823,7 +824,7 @@ void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, 
 void writeTolog( char * buff){
 
     FILE *pfile;
-    pfile = fopen("logNeuron50", "a");
+    pfile = fopen("log", "a");
 
     if ( pfile != NULL ){
         fprintf(pfile, "%s", buff);

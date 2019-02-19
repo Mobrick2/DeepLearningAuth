@@ -16,6 +16,8 @@ long int DELTA = 123456; //Test output error signal
 //Generator of G1 and G2
 element_t g,h,l,l1;
 
+
+void readInputdata2( long int  *input, char * filename);
 /* Initialize the group generators */
 void init_group_generators(pairing_t pairing);
 
@@ -54,7 +56,6 @@ bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_e
 /* verify the weighted sum, i.e. z = a1w1 + a2w2; */
 bool verify_wsum(pairing_t pairing, long int wsum, mpz_t R, element_t PCOM);
 
-void readInputdata( long int *input, char * filename);
 void readWeightParmaters( long int * weight, char * filename);
 
 void UnitVOConstructionTime(pairing_t paring, long int pix, long int w,
@@ -70,6 +71,8 @@ void aggregatePairingResult(int k, element_t PCOM, element_t pcom);
 void writeTolog( char * buff);
 
 float exponential(int n, float x); 
+ 
+void readInputdata( long int  *input, int * inputIndex, char * filename);
 /***** end of function definition *****/
 
 
@@ -87,40 +90,43 @@ int main(int argc, char **argv) {
   //writeTolog("step1.1\t step1.2\t step1.3\t step2.1\t step2.2\t step2.3\t step2.4\t step2.5\t step2.6\n");
 
   //read the input data into memory : 2000 test data example with 784 dimensions 
-  int size = 2000, dim = 784; //2000, 784 = 1568000
-  long int *input = (long int *)malloc(dim * size * sizeof(long int)); 
-  readInputdata(input,"/home/bzhang41/DLVerification/dataset/testdata.txt");
+  //int size = 6698834;
+  //long int *input = (long int *)malloc( size * sizeof(long int));
+  //int *inputIndex = (int *)malloc(1680 *  sizeof(int));
+  //readInputdata(input, inputIndex, "/home/bzhang41/deeplearninglib/timit-preprocessor/data/processed/test.13.ark");
 
-  //read the weight parameter 784 * 512 == 401408 //
-  //network 784*20 + 230*230 + 20*230 + 230*20 + 20*10 = 77980
-  int n1 = 512; //512
+  int size = 2000, dim = 784; //2000, 784 = 1568000
+  long int *input = (long int *)malloc(dim * size * sizeof(long int));
+  readInputdata2(input,"/home/bzhang41/DLVerification/dataset/testdata.txt");
+
+  /*
+  for ( int i = 0 ; i < size; ++ i){
+	input[i] = rand() % 30+30 ;//NUMSCALE * ((rand() % 30)+1000);
+	//printf("%ld ", input[i]);
+  }
+  */
+
+  int n1 = 512;
   long int *fc1_weight = (long int * ) malloc(dim * n1 * sizeof (long int));
   readWeightParmaters(fc1_weight, "/home/bzhang41/DLVerification/dataset/fc1_weight.txt");
 
 
+  //401408  
   start = clock(); 
-  int weightNumber = 784 * 500;
-  element_t *encWeight = ( element_t *)malloc ( weightNumber  * sizeof(element_t));
+  int weightNumber = 512 * 100;
+  element_t *encWeight = ( element_t *) malloc ( weightNumber  * sizeof(element_t));
   for ( int i = 0 ; i < weightNumber ; ++ i ){
         create_WproofWithNegativeValue(encWeight[i],pairing,fc1_weight[i]);
   }
   end = clock();
   double prooftest = (((double) (end - start)) / CLOCKS_PER_SEC);
   printf("%f\n",prooftest);
-
+  
 
   double step1_1 = 0; //Verifcation of weighted sum at the first layer
   double step1_2 = 0; //Calculation of the output
-  double step1_3 = 0; //Verification of E1
-  double step2_1 = 0; //verification of output error signal
-  double step2_2 = 0; //verification of partial derivative at output layer
-  double step2_3 = 0; //verification of error signal at last hidden layer
-  double step2_4 = 0; //calculate the derivative at hidden layer
-  double step2_5 = 0; //verification of derivation at input layer
-  double step2_6 = 0; //calculation of weight update
-
-  //prepare encrpted value to save running time (Those are the VO from the client)
-  int pixNumber = 784*510;
+  double step1_3 = 0; //Calculation of the output
+  int pixNumber = 100*1000;
   element_t *encInput = ( element_t *)malloc (pixNumber * sizeof(element_t));
   //printf("vo construction time for all\n");
   for ( int i = 0 ; i < pixNumber ; ++ i ){
@@ -133,15 +139,14 @@ int main(int argc, char **argv) {
   char * buff = ( char *) malloc( 1000 * sizeof(char));
   
   int countWeight = 0 ;
-  int neuronNumberAtH1 = 50, neuronNumberAtH2 = 200, neuronNumberAtH3 = 200, neuronNumberAtH4 = 50, outputNum = 10;
+  int neuronNumberAtH1 = 50, neuronNumberAtH2 = 200, neuronNumberAtH3 = 200, neuronNumberAtH4 = 50, outputNum = 61;
 
-  int batchsize = 200;
+  dim = 100;
+  int batchsize = 10;
   for ( int i = 0; i < batchsize ; ++ i){
 
       countWeight = 0;
-      
       //First hidden layer, verify weighted sum 784*neuronNumberAtH1
-      start = clock();
       long int * zk = ( long int *) malloc( neuronNumberAtH1 * sizeof(long int)); 
       for (int j = 0 ; j < neuronNumberAtH1 ; ++ j ){
          
@@ -155,14 +160,20 @@ int main(int argc, char **argv) {
               long int pix = (input[i*dim+k]);
               wsum += (w*pix);
 
-              element_t pcom ;//, wcom;
+              element_t pcom ; //, wcom;
               //generate g^w
               //create_WproofWithNegativeValue(wcom,pairing,w);
               //generate l^unit =  e(g^a,g^w)
+              start = clock();
               generate_Uproof(pcom,encInput[i*dim+k],encWeight[countWeight-1],pairing);
               //element_printf("size of gt = %B\n", unit_enc);
+	      end = clock();
+	      step1_1 += (((double) (end - start)) / CLOCKS_PER_SEC);
 
+              start = clock();
               aggregatePairingResult(k,PCOM,pcom);
+	      end = clock();
+	      step1_2 += (((double) (end - start)) / CLOCKS_PER_SEC);
               //printf("size of wsum = %ld\n",w*pix);
 
               //release memory
@@ -171,313 +182,21 @@ int main(int argc, char **argv) {
 
 
           //verify if \Pi e(g^a,h^w) ?= e(g,h)^wsum, part of the verification
+ 	  start = clock(); 
           create_ZproofWithNegativeValue(ghz, pairing,wsum);
+	  end = clock();
+	  step1_3 += (((double) (end - start)) / CLOCKS_PER_SEC);
           if ( element_cmp(ghz,PCOM) ) ErrorFlag = true;
           
           element_clear(PCOM); element_clear(ghz);
-      }
-      end = clock();
-      step1_1 += (((double) (end - start)) / CLOCKS_PER_SEC);
-     
-      
-      //First layer activation function
-      start = clock();
-      
-      double * zkreal = (double *) malloc( neuronNumberAtH1 * sizeof(double)); 
-      for ( int j = 0 ; j < neuronNumberAtH1; ++ j){
-          zkreal[j] = -((double) zk[j])/ ((double) NUMSCALE);
-          zkreal[j] = 1 / (1.0 + exp(zkreal[j]));
-      }
-
-      //Second hidden layer, neuronNumberAtH1*neuronNumberAtH2
-      double * zkreal2 = (double *) malloc( neuronNumberAtH2 * sizeof(double)); 
-      for ( int j = 0 ; j < neuronNumberAtH2; ++ j ){
-
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH1; ++ k ){
-              wsumreal += zkreal[k] * (double) fc1_weight[countWeight++] / (double) NUMSCALE;
-          }
-          
-          //second hidden layer activation function
-          zkreal2[j] = 1 / (1.0+exp(-wsumreal)) ;
-      }
-
-      //Third hidden layer, neuronNumberAtH2*neuronNumberAtH3
-      double * zkreal3 = (double *) malloc( neuronNumberAtH3 * sizeof(double));
-      for ( int j = 0 ; j < neuronNumberAtH3; ++ j ){
-          
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH2; ++ k ){
-              wsumreal += zkreal2[k] * (double) fc1_weight[countWeight++] / (double) NUMSCALE;
-          }
-          
-          //Third hidden layer activation function
-          zkreal3[j] = 1 / (1.0+exp(-wsumreal)) ;
-      }
-      
-      //Fourth hidden layer, neuronNumberAtH3*neuronNumberAtH4
-      double * zkreal4 = (double *) malloc( neuronNumberAtH4 * sizeof(double));
-      for ( int j = 0 ; j < neuronNumberAtH4; ++ j ){
-          
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH3; ++ k ){
-              wsumreal += zkreal3[k] * (double) fc1_weight[countWeight++] / (double) NUMSCALE;
-          }
-          
-          //Fourth hidden layer activation function
-          zkreal4[j] = 1 / (1.0+exp(-wsumreal)) ;
-      }
-      
-      //Output layer, neuronNumberAtH4*outputNum
-      double * output = (double *) malloc( outputNum * sizeof(double));
-      for ( int j = 0 ; j < outputNum; ++ j ){
-          
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH4; ++ k ){
-              wsumreal += zkreal4[k] * (double) fc1_weight[countWeight++] / (double) NUMSCALE;
-          }
-          
-          //Output layer activation function
-          output[j] = 1 / (1.0+exp(-wsumreal)) ;
-      }
-      
-      end = clock();
-      step1_2 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      
-      start = clock();
-      element_t diffcom, errorcom; element_init_GT(diffcom, pairing);
-      long int diff = E1*2;
-      
-      for ( int j = 0 ; j < outputNum; ++ j){
-          
-          long int outputtmp = (long int) -output[j] * NUMSCALE;
-          
-          //g^(y-o)
-          element_t ycom, ocom, ycom1, ocom1, pcom;
-          create_WproofWithNegativeValue(ycom,pairing,fc1_weight[countWeight]);
-          create_WproofWithNegativeValue(ocom,pairing,outputtmp);
-          element_mul(ycom,ycom,ocom);
-          
-          //g^(y-o)
-          generate_AproofWithNegativeValue(ycom1,pairing,fc1_weight[countWeight]);
-          generate_AproofWithNegativeValue(ocom1,pairing,outputtmp);
-          element_mul(ycom1,ycom1,ocom1);
-          
-          //e(g^(y-o),g^(y-o))
-          generate_Uproof(pcom,ycom,ycom1,pairing);
-        
-          //g^e2 * g^e2 * g^e2
-          aggregatePairingResult(j,diffcom,pcom);
-          
-          element_clear(ycom);element_clear(ycom1);element_clear(ocom);element_clear(ocom1);
-      }
-      
-      create_ZproofWithNegativeValue(errorcom, pairing,diff);
-      if ( !element_cmp(errorcom,diffcom) ) ErrorFlag = true;
-      element_clear(diffcom); element_clear(errorcom);
-      
-      end = clock();
-      step1_3 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      start = clock();
-      for ( int j = 0 ; j < outputNum; ++ j){
-          
-          long int outputtmp = (long int) -output[j] * NUMSCALE;
-          
-          element_t ycom, ocom, pcom, der, deltacom;
-          //g^(y-o)
-          create_WproofWithNegativeValue(ycom,pairing,fc1_weight[countWeight]);
-          create_WproofWithNegativeValue(ocom,pairing,outputtmp);
-          element_mul(ycom,ycom,ocom);
-          
-          //g^(sigma')
-          double derivativereal = -output[j] * (1-output[j]) * NUMSCALE;
-          long int derivativeLong = (long int) derivativereal;
-          generate_AproofWithNegativeValue(der,pairing,derivativeLong);
-          
-          //e(g^(y-o),g^sigma')
-          generate_Uproof(pcom,ycom,der,pairing);
-          
-          //g^delta and check e(g^(y-o),g^sigma') ?= g^delta
-          create_ZproofWithNegativeValue(deltacom, pairing, DELTA);
-          if ( !element_cmp(deltacom,pcom) ) ErrorFlag = true;
-          
-          element_clear(ycom);element_clear(ocom);element_clear(pcom);element_clear(der);element_clear(deltacom);
-      }
-      
-      end = clock();
-      step2_1 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      start = clock();
-      for ( int j = 0 ; j < outputNum * neuronNumberAtH4 ; ++ j){
-          
-          long int a_L = (fc1_weight[countWeight--]);
-          long int signal = (input[j]);
-          long int derreal = a_L*signal ;
-          
-          element_t pcom, wcom, dercom;
-          //generate g^a_(l-1)
-          create_WproofWithNegativeValue(wcom,pairing,a_L);
-          //generate e(g^a,g^delta)
-          generate_Uproof(pcom,encInput[j],wcom,pairing);
-   
-          //check if e(g^a,g^delta) ?= e(g,g)^der
-          create_ZproofWithNegativeValue(dercom, pairing, derreal);
-          if ( element_cmp(dercom,pcom) ) ErrorFlag = true;
-          
-      }
-      end = clock();
-      step2_2 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      
-      int dimcount = 0 ;
-      start = clock();
-      for (int j = 0 ; j < outputNum ; ++ j ){
-          
-          //aggregated pairing viarable
-          element_t PCOM, ghz; element_init_GT(PCOM, pairing);
-          long int wsum = 0 ;
-          
-          for ( int k = 0 ; k < neuronNumberAtH4 ; ++ k){ // k < inputnum : the dimension of the input data
-              
-              long int w = (fc1_weight[countWeight--]);
-              long int errorsignal = (input[dimcount]);
-              wsum += (w*errorsignal);
-              
-              element_t pcom;
-              //generate g^w
-              //create_WproofWithNegativeValue(wcom,pairing,w);
-              //generate l^unit =  e(g^a,g^w)
-              generate_Uproof(pcom,encInput[dimcount++],encWeight[countWeight+1],pairing);
-              //element_printf("size of gt = %B\n", unit_enc);
-              
-              aggregatePairingResult(k,PCOM,pcom);
-              //printf("size of wsum = %ld\n",w*pix);
-              
-              //release memory
-              element_clear(pcom); //element_clear(wcom);
-          }
-          
-          //verify if \Pi e(g^a,h^w) ?= e(g,h)^wsum, part of the verification
-          create_ZproofWithNegativeValue(ghz, pairing,wsum);
-          if ( element_cmp(ghz,PCOM) ) ErrorFlag = true;
-          
-          element_clear(PCOM); element_clear(ghz);
-      }
-      end = clock();
-      step2_3 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      
-      start = clock();
-      //derivative calculation at H4 -- H3
-      for (int j = 0 ; j < neuronNumberAtH4 ; ++ j ){
-          double sigmaprime = zkreal4[j]*(1-zkreal4[j]);
-          for ( int k = 0 ; k < neuronNumberAtH3; ++ k){
-              double weightupdate = sigmaprime * sigmaprime;
-          }
-      }
-      
-      //error signal at H3
-      for ( int j = 0 ; j < neuronNumberAtH4; ++ j ){
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH3; ++ k ){
-              wsumreal += zkreal3[k] * (double) fc1_weight[countWeight--] / (double) NUMSCALE;
-          }
-      }
-    
-      //derivative at H3--H2
-      for (int j = 0 ; j < neuronNumberAtH3 ; ++ j ){
-          double sigmaprime = zkreal3[j]*(1-zkreal3[j]);
-          for ( int k = 0 ; k < neuronNumberAtH2; ++ k){
-              double weightupdate = sigmaprime * sigmaprime;
-          }
-      }
-      
-      //error signal at H2
-      for ( int j = 0 ; j < neuronNumberAtH3; ++ j ){
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH2; ++ k ){
-              wsumreal += zkreal2[k] * (double) fc1_weight[countWeight--] / (double) NUMSCALE;
-          }
-      }
-      
-      //derivative at H2--H1
-      for (int j = 0 ; j < neuronNumberAtH2 ; ++ j ){
-          double sigmaprime = zkreal2[j]*(1-zkreal2[j]);
-          for ( int k = 0 ; k < neuronNumberAtH1; ++ k){
-              double weightupdate = sigmaprime * sigmaprime;
-          }
-      }
-      
-      //error signal at H1
-      for ( int j = 0 ; j < neuronNumberAtH2; ++ j ){
-          double wsumreal = 0;
-          for ( int k = 0 ; k < neuronNumberAtH1; ++ k ){
-              wsumreal += zkreal[k] * (double) fc1_weight[countWeight--] / (double) NUMSCALE;
-          }
-      }
-      end = clock();
-      step2_4 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-     
-      countWeight = 784 * 500 - 1;      
-      start = clock();
-      for ( int j = 0 ; j < neuronNumberAtH1 * dim ; ++ j){
-          
-          long int w = (fc1_weight[countWeight--]);
-          long int pix = (input[j]);
-          long int derreal = w*pix ;
-          
-          element_t pcom, dercom;
-          //generate g^a_(l-1)
-          //create_WproofWithNegativeValue(wcom,pairing,w);
-          //generate e(g^a,g^delta)
-          generate_Uproof(pcom,encInput[j],encWeight[countWeight+1],pairing);
-          //check if e(g^a,g^delta) ?= e(g,g)^der
-          create_ZproofWithNegativeValue(dercom, pairing, derreal);
-          if ( element_cmp(dercom,pcom) ) ErrorFlag = true;
-          
-      }
-      end = clock();
-      step2_5 += (((double) (end - start)) / CLOCKS_PER_SEC);
-      
-      start = clock();
-      int totalderivativeNum = dim*neuronNumberAtH1+neuronNumberAtH1*neuronNumberAtH2+neuronNumberAtH2*neuronNumberAtH3+neuronNumberAtH3*neuronNumberAtH4+ neuronNumberAtH4*outputNum;
-      for ( int j = 0 ; j < totalderivativeNum; ++ j){
-          fc1_weight[j] ++ ;
-      }
-      end = clock();
-      step2_6 += (((double) (end - start)) / CLOCKS_PER_SEC);
-
-      if ( (i + 1) % 10 == 0 )  
-      	printf("Step 2 finished\n"); 
-
-      if ( (i+1) % 50 == 0 || i+1 == 10 ){
-        printf("10 batch size finished\n"); 
-        snprintf(buff, 1000, "%f\t", step1_1); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step1_2); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step1_3); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step2_1); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step2_2); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step2_3); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step2_4); writeTolog(buff);
-        snprintf(buff, 1000, "%f\t", step2_5); writeTolog(buff);
-        snprintf(buff, 1000, "%f\n", step2_6); writeTolog(buff);
       }
   } 
   
-  
+  printf("%f\t%f\t%f\n",step1_1,step1_2,step1_3);
   printf("%d\n",ErrorFlag);
   free(buff);
   return 0;
 }
-
-
-
-
-
-
 
 /****** Start of function details *****/
 void init_group_generators(pairing_t pairing){
@@ -672,40 +391,68 @@ bool verify_unit(pairing_t pairing, element_t ga, element_t hw, element_t unit_e
      return flag;
 }
 
-void readInputdata( long int  *input, char * filename){
+void readInputdata( long int  *input, int * inputIndex, char * filename){
 
-  char * pixstr = malloc( 20 * sizeof(char));
+  char * pixstr = (char*) malloc( 20 * sizeof(char));
   int i = 0;
   char tmp;
 
   FILE *file;
   file = fopen(filename, "r");
   int count  = 0 ;
- 
+  //printf("file openned\n");
+
+  //int long minvalue = 5000;
+  //int long maxvalue = 0;
+
+  int dimentionCount = 0;
   if ( file != NULL ){
 
-       while ( (tmp = (char)fgetc(file)) != EOF ){ 
+       while ( (tmp = (char)fgetc(file)) != EOF ){
 
-	   if (tmp == '[' || tmp == '\t' || tmp == '\n') continue;
+           if (tmp != '[') continue;
 
-	   pixstr[i++] = tmp;
-           if ( tmp == ' ' || tmp == ']'){
-		pixstr[i-1] = '\0';
-   		if ( pixstr[0] != '\0' ) {
-			input[count++] = (long int) (NUMSCALE * atof(pixstr));
-			//printf("%d\n", input[count-1]);
-		}
-		i = 0;
-	   }
+           while ((tmp = (char)fgetc(file)) != EOF ){
+
+                if  ( (tmp >= '0' && tmp <= '9') || tmp == '.' || tmp == '-'){
+                    pixstr[i++] = tmp;
+                    //printf("%c",tmp);
+
+                    while ( ((tmp = (char)fgetc(file)) >= '0' &&
+                        tmp <= '9') || tmp == '.' || tmp == '-' ){
+                        pixstr[i++] = tmp;
+                        //printf("%c",tmp);
+                    }
+
+		    pixstr[i] = '\0';
+                    input[count++] = (long int) (NUMSCALE * atof(pixstr));
+
+                    //if ( input[count-1] > maxvalue ) maxvalue = input[count-1] ;
+                    //if ( input[count-1] < minvalue ) minvalue = input[count-1] ;
+
+                    i = 0 ;
+
+                }
+
+                if ( tmp == ']' ) {
+                   //dimentionCount++;
+                   inputIndex[dimentionCount++] = count ;
+                   //dimentionCount = 0 ;
+                   break;
+                }
+          }
        }
 
        fclose(file);
   }
   else printf("file open error\n");
- 
-  //printf("n=%d\n", count);
+  //printf("min n=%ld\n", minvalue);
+  //printf("max n=%ld\n", maxvalue);
+  //printf("sample n=%u\n",dimentionCount);
   free(pixstr);
+
 }
+
 
 void readWeightParmaters( long int * weight, char * filename){
 
@@ -823,7 +570,7 @@ void aggregateProof(bool flag, int k, element_t PCOM, element_t PCOM2, mpz_t R, 
 void writeTolog( char * buff){
 
     FILE *pfile;
-    pfile = fopen("logNeuron50", "a");
+    pfile = fopen("log", "a");
 
     if ( pfile != NULL ){
         fprintf(pfile, "%s", buff);
@@ -841,3 +588,38 @@ float exponential(int n, float x) {
   
     return sum; 
 } 
+
+void readInputdata2( long int  *input, char * filename){
+
+  char * pixstr = malloc( 20 * sizeof(char));
+  int i = 0;
+  char tmp;
+
+  FILE *file;
+  file = fopen(filename, "r");
+  int count  = 0 ;
+ 
+  if ( file != NULL ){
+
+       while ( (tmp = (char)fgetc(file)) != EOF ){ 
+
+	   if (tmp == '[' || tmp == '\t' || tmp == '\n') continue;
+
+	   pixstr[i++] = tmp;
+           if ( tmp == ' ' || tmp == ']'){
+		pixstr[i-1] = '\0';
+   		if ( pixstr[0] != '\0' ) {
+			input[count++] = (long int) (NUMSCALE * atof(pixstr));
+			//printf("%d\n", input[count-1]);
+		}
+		i = 0;
+	   }
+       }
+
+       fclose(file);
+  }
+  else printf("file open error\n");
+ 
+  //printf("n=%d\n", count);
+  free(pixstr);
+}
