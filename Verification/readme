@@ -12,5 +12,6 @@ About the code:
 1. All the code you need is in bls.c, the only file you need to look at!
 2. Other *.c fils do not server the verification of this project, 
 their role is to make bls.c compile successfully.
-3  Use 'make' to compile, debug the code if any errors appear
+3. Use 'make' to compile, debug the code if any errors appear
+4. Other files that do not exist in the original pbc directory are variants of implementation of bls.c for different purposes.
 4. Good luck !
