@@ -11,5 +11,5 @@ First optimizer is the original one implemented by Tensorflow team
 You can get gradients and updated parameters by this optimizer, it also supports regularization
 
 Second optimizer is followed by the chain rule to calculate the each intermediate results to get
-the gradient. It does not support regularization, but it can prodide the error signal term at each layer.
+the gradient. It does not support regularization, but it can provide the error signal term at each layer.
 
